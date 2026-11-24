@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Auto Green Square</title>
+  <title>Auto Green Square (5x)</title>
   <style>
     body {
       background-color: #0d1117;
@@ -31,16 +31,17 @@
     .error { color: #f85149; }
     .grid {
       display: flex;
-      gap: 4px;
+      gap: 6px;
       justify-content: center;
       margin: 20px 0;
     }
     .square {
-      width: 16px;
-      height: 16px;
+      width: 18px;
+      height: 18px;
       border-radius: 3px;
       background-color: #161b22;
       border: 1px solid #30363d;
+      transition: background-color 0.2s, border-color 0.2s;
     }
     .square.active { background-color: #39d353; border-color: #39d353; }
     button {
@@ -59,7 +60,7 @@
 <body>
 
   <div class="card">
-    <div id="status" class="status loading">Registrando contribuição...</div>
+    <div id="status" class="status loading">Iniciando 5 contribuições...</div>
     <div id="details" style="font-size: 0.9rem; color: #8b949e;">Conectando à API do GitHub</div>
     
     <div class="grid" id="grid">
@@ -67,7 +68,7 @@
       <div class="square"></div>
       <div class="square"></div>
       <div class="square"></div>
-      <div class="square" id="today-square"></div>
+      <div class="square"></div>
     </div>
 
     <button onclick="resetConfig()">Reconfigurar Token / Repo</button>
@@ -75,6 +76,7 @@
 
   <script>
     const FILE_PATH = 'log.txt';
+    const TOTAL_COMMITS = 5;
 
     function getConfig() {
       let token = localStorage.getItem('gh_token');
@@ -84,7 +86,7 @@
       if (!token || !owner || !repo) {
         owner = prompt('Seu usuário do GitHub:');
         repo = prompt('Nome deste repositório:');
-        token = prompt('Cole seu Personal Access Token (com permissão de Contents: Read & Write):');
+        token = prompt('Cole seu Personal Access Token (Contents: Read & Write):');
 
         if (owner && repo && token) {
           localStorage.setItem('gh_owner', owner.trim());
@@ -102,9 +104,10 @@
       location.reload();
     }
 
-    async function triggerContribution() {
+    async function triggerContributions() {
       const statusEl = document.getElementById('status');
       const detailsEl = document.getElementById('details');
+      const squares = document.querySelectorAll('.square');
       const { owner, repo, token } = getConfig();
 
       if (!token || !owner || !repo) {
@@ -122,7 +125,7 @@
       };
 
       try {
-        // 1. Pega o SHA atual do arquivo log.txt (se existir)
+        // 1. Lê o estado atual do arquivo log.txt uma única vez
         let sha = null;
         let currentContent = '';
         const getRes = await fetch(apiUrl, { headers });
@@ -135,32 +138,43 @@
           throw new Error(`Erro ao ler repositório (${getRes.status})`);
         }
 
-        // 2. Cria o novo conteúdo com data/hora atual
-        const now = new Date().toLocaleString('pt-BR');
-        const newContent = `${currentContent}Contribuição registrada em: ${now}\n`;
-        const encodedContent = btoa(unescape(encodeURIComponent(newContent)));
+        // 2. Faz os 5 commits em sequência
+        for (let i = 1; i <= TOTAL_COMMITS; i++) {
+          statusEl.textContent = `Registrando contribuição ${i} de ${TOTAL_COMMITS}...`;
+          const now = new Date().toLocaleString('pt-BR');
+          currentContent += `Contribuição ${i}/${TOTAL_COMMITS} registrada em: ${now}\n`;
+          const encodedContent = btoa(unescape(encodeURIComponent(currentContent)));
 
-        // 3. Faz o commit via API
-        const putRes = await fetch(apiUrl, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({
-            message: `chore: daily check-in (${now})`,
-            content: encodedContent,
-            ...(sha ? { sha } : {})
-          })
-        });
+          const putRes = await fetch(apiUrl, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({
+              message: `chore: daily check-in ${i}/${TOTAL_COMMITS} (${now})`,
+              content: encodedContent,
+              ...(sha ? { sha } : {})
+            })
+          });
 
-        if (!putRes.ok) {
-          const errData = await putRes.json();
-          throw new Error(errData.message || 'Falha ao criar commit');
+          if (!putRes.ok) {
+            const errData = await putRes.json();
+            throw new Error(errData.message || `Falha no commit ${i}`);
+          }
+
+          // Atualiza o SHA com o retorno da API para o próximo commit funcionar
+          const putData = await putRes.json();
+          sha = putData.content.sha;
+
+          // Acende o quadradinho correspondente
+          if (squares[i - 1]) {
+            squares[i - 1].classList.add('active');
+          }
         }
 
-        // 4. Atualiza a interface
-        statusEl.textContent = 'Quadradinho verde garantido!';
+        // 3. Finalizado
+        const finishedAt = new Date().toLocaleString('pt-BR');
+        statusEl.textContent = '5 contribuições garantidas!';
         statusEl.className = 'status success';
-        detailsEl.textContent = `Commit realizado em ${now}`;
-        document.getElementById('today-square').classList.add('active');
+        detailsEl.textContent = `Concluído em ${finishedAt}`;
 
       } catch (err) {
         statusEl.textContent = 'Erro ao registrar';
@@ -169,8 +183,7 @@
       }
     }
 
-    // Executa automaticamente ao carregar ou atualizar a página
-    window.addEventListener('DOMContentLoaded', triggerContribution);
+    window.addEventListener('DOMContentLoaded', triggerContributions);
   </script>
 </body>
 </html>
