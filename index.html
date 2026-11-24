@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auto Green Square</title>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      text-align: center;
+    }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 24px 32px;
+      max-width: 400px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    .status { font-size: 1.2rem; margin-bottom: 12px; font-weight: 600; }
+    .success { color: #39d353; }
+    .loading { color: #58a6ff; }
+    .error { color: #f85149; }
+    .grid {
+      display: flex;
+      gap: 4px;
+      justify-content: center;
+      margin: 20px 0;
+    }
+    .square {
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+      background-color: #161b22;
+      border: 1px solid #30363d;
+    }
+    .square.active { background-color: #39d353; border-color: #39d353; }
+    button {
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      margin-top: 15px;
+    }
+    button:hover { background: #30363d; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div id="status" class="status loading">Registrando contribuição...</div>
+    <div id="details" style="font-size: 0.9rem; color: #8b949e;">Conectando à API do GitHub</div>
+    
+    <div class="grid" id="grid">
+      <div class="square"></div>
+      <div class="square"></div>
+      <div class="square"></div>
+      <div class="square"></div>
+      <div class="square" id="today-square"></div>
+    </div>
+
+    <button onclick="resetConfig()">Reconfigurar Token / Repo</button>
+  </div>
+
+  <script>
+    const FILE_PATH = 'log.txt';
+
+    function getConfig() {
+      let token = localStorage.getItem('gh_token');
+      let owner = localStorage.getItem('gh_owner');
+      let repo = localStorage.getItem('gh_repo');
+
+      if (!token || !owner || !repo) {
+        owner = prompt('Seu usuário do GitHub:');
+        repo = prompt('Nome deste repositório:');
+        token = prompt('Cole seu Personal Access Token (com permissão de Contents: Read & Write):');
+
+        if (owner && repo && token) {
+          localStorage.setItem('gh_owner', owner.trim());
+          localStorage.setItem('gh_repo', repo.trim());
+          localStorage.setItem('gh_token', token.trim());
+        }
+      }
+      return { owner, repo, token };
+    }
+
+    function resetConfig() {
+      localStorage.removeItem('gh_token');
+      localStorage.removeItem('gh_owner');
+      localStorage.removeItem('gh_repo');
+      location.reload();
+    }
+
+    async function triggerContribution() {
+      const statusEl = document.getElementById('status');
+      const detailsEl = document.getElementById('details');
+      const { owner, repo, token } = getConfig();
+
+      if (!token || !owner || !repo) {
+        statusEl.textContent = 'Configuração incompleta';
+        statusEl.className = 'status error';
+        detailsEl.textContent = 'Clique no botão abaixo para preencher os dados.';
+        return;
+      }
+
+      const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${FILE_PATH}`;
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      };
+
+      try {
+        // 1. Pega o SHA atual do arquivo log.txt (se existir)
+        let sha = null;
+        let currentContent = '';
+        const getRes = await fetch(apiUrl, { headers });
+
+        if (getRes.ok) {
+          const data = await getRes.json();
+          sha = data.sha;
+          currentContent = atob(data.content.replace(/\n/g, ''));
+        } else if (getRes.status !== 404) {
+          throw new Error(`Erro ao ler repositório (${getRes.status})`);
+        }
+
+        // 2. Cria o novo conteúdo com data/hora atual
+        const now = new Date().toLocaleString('pt-BR');
+        const newContent = `${currentContent}Contribuição registrada em: ${now}\n`;
+        const encodedContent = btoa(unescape(encodeURIComponent(newContent)));
+
+        // 3. Faz o commit via API
+        const putRes = await fetch(apiUrl, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            message: `chore: daily check-in (${now})`,
+            content: encodedContent,
+            ...(sha ? { sha } : {})
+          })
+        });
+
+        if (!putRes.ok) {
+          const errData = await putRes.json();
+          throw new Error(errData.message || 'Falha ao criar commit');
+        }
+
+        // 4. Atualiza a interface
+        statusEl.textContent = 'Quadradinho verde garantido!';
+        statusEl.className = 'status success';
+        detailsEl.textContent = `Commit realizado em ${now}`;
+        document.getElementById('today-square').classList.add('active');
+
+      } catch (err) {
+        statusEl.textContent = 'Erro ao registrar';
+        statusEl.className = 'status error';
+        detailsEl.textContent = err.message;
+      }
+    }
+
+    // Executa automaticamente ao carregar ou atualizar a página
+    window.addEventListener('DOMContentLoaded', triggerContribution);
+  </script>
+</body>
+</html>
